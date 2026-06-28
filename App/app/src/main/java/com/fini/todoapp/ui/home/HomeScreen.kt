@@ -25,7 +25,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,6 +48,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -98,6 +98,7 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -113,6 +114,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.fini.todoapp.data.model.CategoryResponse
@@ -231,24 +233,36 @@ fun HomeScreen(
             }
         }
     ) { innerPadding ->
-        BoxWithConstraints(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
             ClearFocusLayer()
 
-            val context = LocalContext.current
-            val isAutomotive = remember {
+            val configuration = LocalConfiguration.current
+            val windowSize = LocalWindowInfo.current.containerSize
+            val density = LocalDensity.current
+            val windowWidth = with(density) { windowSize.width.toDp() }
+            val windowHeight = with(density) { windowSize.height.toDp() }
+            val isAutomotive = remember(
+                context,
+                windowWidth,
+                windowHeight,
+                configuration.uiMode
+            ) {
+                val modeType = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK
+
                 context.packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE) ||
-                (context.getSystemService(android.content.Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_CAR ||
-                android.os.Build.DEVICE.contains("car", ignoreCase = true) ||
-                android.os.Build.MODEL.contains("car", ignoreCase = true) ||
-                android.os.Build.FINGERPRINT.contains("car", ignoreCase = true) ||
-                (context.resources.configuration.screenWidthDp >= 800 && context.resources.configuration.screenWidthDp > context.resources.configuration.screenHeightDp)
+                    (context.getSystemService(android.content.Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == Configuration.UI_MODE_TYPE_CAR ||
+                    modeType == Configuration.UI_MODE_TYPE_CAR ||
+                    android.os.Build.DEVICE.contains("car", ignoreCase = true) ||
+                    android.os.Build.MODEL.contains("car", ignoreCase = true) ||
+                    android.os.Build.FINGERPRINT.contains("car", ignoreCase = true) ||
+                    (windowWidth >= 800.dp && windowWidth > windowHeight)
             }
 
-            val landscape = LocalConfiguration.current.screenWidthDp > LocalConfiguration.current.screenHeightDp
+            val landscape = windowWidth > windowHeight
             val gridCells = GridCells.Adaptive(
                 minSize = when {
                     isAutomotive -> 260.dp
@@ -1415,8 +1429,12 @@ private fun NoteCard(
 
 @Composable
 private fun isWideCompactHome(): Boolean {
-    val configuration = LocalConfiguration.current
-    return configuration.screenWidthDp >= 700 && configuration.screenHeightDp <= 700
+    val windowSize = LocalWindowInfo.current.containerSize
+    val density = LocalDensity.current
+    val windowWidth = with(density) { windowSize.width.toDp() }
+    val windowHeight = with(density) { windowSize.height.toDp() }
+
+    return windowWidth >= 700.dp && windowHeight <= 700.dp
 }
 
 private fun buildTaskSections(
