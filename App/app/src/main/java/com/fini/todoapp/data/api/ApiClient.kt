@@ -48,7 +48,5 @@ object ApiClient {
         .build()
 
     val authApi: AuthApi = retrofit.create(AuthApi::class.java)
-    val categoryApi: CategoryApi = retrofit.create(CategoryApi::class.java)
-    val taskApi: TaskApi = retrofit.create(TaskApi::class.java)
     val syncApi: SyncApi = retrofit.create(SyncApi::class.java)
 }

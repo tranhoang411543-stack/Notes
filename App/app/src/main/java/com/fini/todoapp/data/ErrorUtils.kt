@@ -2,9 +2,17 @@ package com.fini.todoapp.data
 
 import org.json.JSONObject
 import retrofit2.HttpException
+import java.io.IOException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
 object ErrorUtils {
     fun getMessage(e: Throwable): String {
+        if (e.isNoInternetError()) {
+            return "Không có internet"
+        }
+
         val message = if (e is HttpException) {
             val body = e.response()?.errorBody()?.string()
             parseMessage(body) ?: body ?: "HTTP ${e.code()}"
@@ -59,5 +67,18 @@ object ErrorUtils {
 
             else -> message
         }
+    }
+
+    private fun Throwable.isNoInternetError(): Boolean {
+        val text = message.orEmpty()
+        return this is UnknownHostException ||
+                this is SocketTimeoutException ||
+                (this is SocketException && !text.contains("Connection refused", ignoreCase = true)) ||
+                (this is IOException && (
+                        text.contains("Unable to resolve host", ignoreCase = true) ||
+                                text.contains("No address associated", ignoreCase = true) ||
+                                text.contains("Network is unreachable", ignoreCase = true) ||
+                                text.contains("ENETUNREACH", ignoreCase = true)
+                        ))
     }
 }

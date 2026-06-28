@@ -195,12 +195,19 @@ class TodoApiIntegrationTest {
 
         String workCategoryId = createCategory(token, " Work ", "#4285F4");
         String homeCategoryId = createCategory(token, "Home", "#0F9D58");
+        String duplicateWorkCategoryId = createCategory(token, "work", "#111111");
 
         mockMvc.perform(get("/api/categories/{id}", workCategoryId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Work"))
                 .andExpect(jsonPath("$.version").value(1));
+
+        mockMvc.perform(get("/api/categories/{id}", duplicateWorkCategoryId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("work"))
+                .andExpect(jsonPath("$.id").value(duplicateWorkCategoryId));
 
         mockMvc.perform(put("/api/categories/{id}", homeCategoryId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(token))
@@ -209,8 +216,9 @@ class TodoApiIntegrationTest {
                                 "name", "work",
                                 "color", "#111111"
                         ))))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Category name already exists"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("work"))
+                .andExpect(jsonPath("$.id").value(homeCategoryId));
 
         LocalDate today = LocalDate.now();
         LocalDateTime todayStart = today.atTime(9, 0);
@@ -380,6 +388,57 @@ class TodoApiIntegrationTest {
                 .andExpect(jsonPath("$.categories[0].id").value(categoryId))
                 .andExpect(jsonPath("$.tasks", hasSize(1)))
                 .andExpect(jsonPath("$.tasks[0].id").value(taskId));
+    }
+
+    @Test
+    void syncAcceptsPastOneTimeNotificationsAndStillReturnsServerData() throws Exception {
+        AuthSession session = register("offlineSyncUser", "offline-sync@example.com", "secret123");
+        String token = session.token();
+
+        String serverCategoryId = createCategory(token, "Server Category", "#4285F4");
+        String serverTaskId = createTask(token, map(
+                "categoryId", serverCategoryId,
+                "title", "Server task",
+                "dueAt", LocalDate.now().plusDays(1).atTime(9, 0).toString(),
+                "reminderEnabled", false,
+                "repeatType", "NONE",
+                "hasLocation", false
+        ));
+
+        String offlineCategoryId = UUID.randomUUID().toString();
+        String offlineTaskId = UUID.randomUUID().toString();
+        LocalDateTime pastNotifyAt = LocalDateTime.now().minusHours(1).withSecond(0).withNano(0);
+
+        mockMvc.perform(post("/api/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(map(
+                                "deviceType", "PHONE",
+                                "deviceName", "Pixel Offline",
+                                "changedCategories", List.of(map(
+                                        "id", offlineCategoryId,
+                                        "name", "Server Category",
+                                        "color", "#DB4437",
+                                        "deleted", false
+                                )),
+                                "changedTasks", List.of(map(
+                                        "id", offlineTaskId,
+                                        "categoryId", offlineCategoryId,
+                                        "title", "Offline task with past reminder",
+                                        "notifyAt", pastNotifyAt.toString(),
+                                        "reminderEnabled", true,
+                                        "repeatType", "NONE",
+                                        "hasLocation", false,
+                                        "deleted", false
+                                ))
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.categories", hasSize(2)))
+                .andExpect(jsonPath("$.tasks", hasSize(2)))
+                .andExpect(jsonPath("$.categories[?(@.id == '" + serverCategoryId + "')]").exists())
+                .andExpect(jsonPath("$.categories[?(@.id == '" + offlineCategoryId + "')]").exists())
+                .andExpect(jsonPath("$.tasks[?(@.id == '" + serverTaskId + "')]").exists())
+                .andExpect(jsonPath("$.tasks[?(@.id == '" + offlineTaskId + "')]").exists());
     }
 
 

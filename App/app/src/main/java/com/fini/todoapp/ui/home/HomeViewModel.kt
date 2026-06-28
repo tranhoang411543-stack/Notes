@@ -15,6 +15,8 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.fini.todoapp.AppSessionPolicy
+import com.fini.todoapp.data.AuthTokenStore
 import com.fini.todoapp.data.ErrorUtils
 import com.fini.todoapp.data.local.FiniDatabase
 import com.fini.todoapp.data.local.LocalCategory
@@ -105,6 +107,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun triggerSync() {
+        if (!AuthTokenStore.hasSession()) {
+            return
+        }
+
         val workManager = WorkManager.getInstance(getApplication())
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -115,6 +121,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         workManager.enqueueUniqueWork("db_sync", ExistingWorkPolicy.REPLACE, syncRequest)
     }
 
+    private fun triggerSyncAfterLocalChange() {
+        if (AppSessionPolicy.shouldSyncAfterLocalChange(AuthTokenStore.hasSession())) {
+            triggerSync()
+        }
+    }
+
     private fun isNetworkAvailable(): Boolean {
         val connectivityManager = getApplication<Application>().getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = connectivityManager.activeNetwork ?: return false
@@ -122,16 +134,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
-    fun loadAll() {
+    fun loadAll(syncWithServer: Boolean = false) {
         loadCategories()
         loadTasks()
-        if (!isNetworkAvailable()) {
+        if (!syncWithServer) {
+            return
+        }
+
+        val hasNetwork = isNetworkAvailable()
+        if (!hasNetwork) {
             android.widget.Toast.makeText(
                 getApplication(),
                 "Không có kết nối Internet",
                 android.widget.Toast.LENGTH_SHORT
             ).show()
-        } else {
+        } else if (AppSessionPolicy.shouldRunSync(AuthTokenStore.hasSession(), hasNetwork)) {
             triggerSync()
         }
     }
@@ -208,7 +225,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 db.categoryDao().insert(newCat)
                 loadCategories()
-                triggerSync()
+                triggerSyncAfterLocalChange()
             } catch (e: Exception) {
                 state = state.copy(error = ErrorUtils.getMessage(e))
             }
@@ -258,8 +275,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     error = null,
                     scrollToTop = true
                 ).withFilteredTasks()
-                
-                triggerSync()
+                triggerSyncAfterLocalChange()
             } catch (e: Exception) {
                 state = state.copy(error = ErrorUtils.getMessage(e))
             }
@@ -297,7 +313,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     TaskNotificationScheduler.schedule(getApplication(), updated.toTaskResponse())
                 }
                 loadTasks()
-                triggerSync()
+                triggerSyncAfterLocalChange()
             } catch (e: Exception) {
                 state = state.copy(error = ErrorUtils.getMessage(e))
             }
@@ -317,7 +333,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     db.taskDao().update(updated)
                 }
                 loadTasks()
-                triggerSync()
+                triggerSyncAfterLocalChange()
             } catch (e: Exception) {
                 state = state.copy(error = ErrorUtils.getMessage(e))
             }
@@ -338,7 +354,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     db.taskDao().update(updated)
                 }
                 loadTasks()
-                triggerSync()
+                triggerSyncAfterLocalChange()
             } catch (e: Exception) {
                 state = state.copy(error = ErrorUtils.getMessage(e))
             }
@@ -370,7 +386,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     loadTasks()
                 }
-                triggerSync()
+                triggerSyncAfterLocalChange()
             } catch (e: Exception) {
                 state = state.copy(error = ErrorUtils.getMessage(e))
             }
@@ -414,7 +430,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 openTrash()
-                triggerSync()
+                triggerSyncAfterLocalChange()
             } catch (e: Exception) {
                 state = state.copy(loading = false, error = ErrorUtils.getMessage(e))
             }
@@ -434,7 +450,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     db.taskDao().update(updated)
                 }
                 openTrash()
-                triggerSync()
+                triggerSyncAfterLocalChange()
             } catch (e: Exception) {
                 state = state.copy(error = ErrorUtils.getMessage(e))
             }
@@ -617,12 +633,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return todayAtMidnight()
     }
 
-    private fun startOfWeek(): Calendar {
-        return todayAtMidnight().apply {
-            val daysSinceMonday = (get(Calendar.DAY_OF_WEEK) + 5) % 7
-            add(Calendar.DAY_OF_YEAR, -daysSinceMonday)
-        }
-    }
 
     private fun endOfThisWeekExclusive(): Calendar {
         return todayAtMidnight().apply {
@@ -653,7 +663,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         name = name,
         color = color,
         createdAt = createdAt,
-        updatedAt = null
+        updatedAt = updatedAt
     )
 
     private fun LocalTask.toTaskResponse() = TaskResponse(

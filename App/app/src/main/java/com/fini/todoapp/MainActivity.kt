@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
@@ -25,6 +26,7 @@ import android.content.Intent
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fini.todoapp.data.AuthTokenStore
 import com.fini.todoapp.notification.TaskNotificationScheduler
+import com.fini.todoapp.ui.auth.AuthCopy
 import com.fini.todoapp.ui.auth.AuthViewModel
 import com.fini.todoapp.ui.auth.ForgotPasswordScreen
 import com.fini.todoapp.ui.auth.LoginScreen
@@ -103,7 +105,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun FiniApp(notificationTaskId: String? = null, onNotificationConsumed: () -> Unit = {}) {
     var screen by remember {
-        mutableStateOf(if (AuthTokenStore.hasSession()) "home" else "login")
+        mutableStateOf(
+            AppSessionPolicy.startScreen(
+                hasSession = AuthTokenStore.hasSession(),
+                offlineMode = AuthTokenStore.hasOfflineMode()
+            ).route
+        )
     }
     var selectedTaskId by remember { mutableStateOf<String?>(null) }
     var pendingNotificationTaskId by remember { mutableStateOf<String?>(null) }
@@ -123,20 +130,22 @@ fun FiniApp(notificationTaskId: String? = null, onNotificationConsumed: () -> Un
 
     LaunchedEffect(Unit) {
         AuthTokenStore.sessionEvent.collect { hasSession ->
-            if (!hasSession) {
+            if (!hasSession && !AuthTokenStore.hasAppAccess()) {
                 selectedTaskId = null
-                homeViewModel.clearLocalData()
                 homeViewModel.resetSession()
-                screen = "login"
+                screen = AppScreen.LOGIN.route
             }
         }
     }
 
     LaunchedEffect(notificationTaskId) {
         if (notificationTaskId != null) {
-            if (AuthTokenStore.hasSession()) {
+            val isOnAuthScreen = screen == AppScreen.LOGIN.route ||
+                    screen == AppScreen.REGISTER.route ||
+                    screen == AppScreen.FORGOT_PASSWORD.route
+            if (AuthTokenStore.hasSession() || !isOnAuthScreen) {
                 selectedTaskId = notificationTaskId
-                screen = "taskDetail"
+                screen = AppScreen.TASK_DETAIL.route
                 onNotificationConsumed()
             } else {
                 pendingNotificationTaskId = notificationTaskId
@@ -167,18 +176,32 @@ fun FiniApp(notificationTaskId: String? = null, onNotificationConsumed: () -> Un
                         homeViewModel.loadAll()
                         if (pendingNotificationTaskId != null) {
                             selectedTaskId = pendingNotificationTaskId
-                            screen = "taskDetail"
+                            screen = AppScreen.TASK_DETAIL.route
                             pendingNotificationTaskId = null
                             onNotificationConsumed()
                         } else {
-                            screen = "home"
+                            screen = AppScreen.HOME.route
                         }
                     },
+                    onContinueOffline = {
+                        AuthTokenStore.continueOffline()
+                        homeViewModel.resetSession()
+                        homeViewModel.loadAll()
+                        val destination = AppSessionPolicy.continueOfflineScreen(
+                            hasPendingNotification = pendingNotificationTaskId != null
+                        )
+                        if (destination == AppScreen.TASK_DETAIL) {
+                            selectedTaskId = pendingNotificationTaskId
+                            pendingNotificationTaskId = null
+                            onNotificationConsumed()
+                        }
+                        screen = destination.route
+                    },
                     onGoToRegister = {
-                        screen = "register"
+                        screen = AppScreen.REGISTER.route
                     },
                     onGoToForgotPassword = {
-                        screen = "forgotPassword"
+                        screen = AppScreen.FORGOT_PASSWORD.route
                     }
                 )
             }
@@ -187,10 +210,10 @@ fun FiniApp(notificationTaskId: String? = null, onNotificationConsumed: () -> Un
                 RegisterScreen(
                     viewModel = authViewModel,
                     onRegisterSuccess = {
-                        screen = "login"
+                        screen = AppScreen.LOGIN.route
                     },
                     onBackToLogin = {
-                        screen = "login"
+                        screen = AppScreen.LOGIN.route
                     }
                 )
             }
@@ -199,7 +222,7 @@ fun FiniApp(notificationTaskId: String? = null, onNotificationConsumed: () -> Un
                 ForgotPasswordScreen(
                     viewModel = authViewModel,
                     onBackToLogin = {
-                        screen = "login"
+                        screen = AppScreen.LOGIN.route
                     }
                 )
             }
@@ -208,17 +231,40 @@ fun FiniApp(notificationTaskId: String? = null, onNotificationConsumed: () -> Un
                 HomeScreen(
                     viewModel = homeViewModel,
                     onCreateTask = {
-                        screen = "createTask"
+                        screen = AppScreen.CREATE_TASK.route
                     },
                     onOpenTask = { taskId ->
                         selectedTaskId = taskId
-                        screen = "taskDetail"
+                        screen = AppScreen.TASK_DETAIL.route
+                    },
+                    onRefresh = {
+                        val destination = AppSessionPolicy.manualSyncScreen(
+                            hasSession = AuthTokenStore.hasSession()
+                        )
+                        if (destination == AppScreen.LOGIN) {
+                            AuthTokenStore.clear()
+                            selectedTaskId = null
+                            homeViewModel.resetSession()
+                            Toast.makeText(
+                                context,
+                                AuthCopy.LOGIN_REQUIRED_TO_SYNC,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            screen = AppScreen.LOGIN.route
+                        } else {
+                            homeViewModel.loadAll(syncWithServer = true)
+                        }
                     },
                     onLogout = {
+                        AuthTokenStore.clear()
                         selectedTaskId = null
-                        homeViewModel.clearLocalData()
                         homeViewModel.resetSession()
-                        screen = "login"
+                        Toast.makeText(
+                            context,
+                            AuthCopy.LOGGED_OUT,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        screen = AppScreen.LOGIN.route
                     }
                 )
             }
@@ -228,7 +274,7 @@ fun FiniApp(notificationTaskId: String? = null, onNotificationConsumed: () -> Un
                     categories = homeViewModel.state.categories,
                     onBack = {
                         homeViewModel.loadAll()
-                        screen = "home"
+                        screen = AppScreen.HOME.route
                     },
                     onCreate = { request ->
                         homeViewModel.createTask(request)
@@ -245,7 +291,7 @@ fun FiniApp(notificationTaskId: String? = null, onNotificationConsumed: () -> Un
                 if (task == null) {
                     LaunchedEffect(selectedTaskId) {
                         homeViewModel.loadAll()
-                        screen = "home"
+                        screen = AppScreen.HOME.route
                     }
                 } else {
                     CreateTaskScreen(
@@ -254,7 +300,7 @@ fun FiniApp(notificationTaskId: String? = null, onNotificationConsumed: () -> Un
                         onBack = {
                             selectedTaskId = null
                             homeViewModel.loadAll()
-                            screen = "home"
+                            screen = AppScreen.HOME.route
                         },
                         onCreate = { request ->
                             homeViewModel.createTask(request)

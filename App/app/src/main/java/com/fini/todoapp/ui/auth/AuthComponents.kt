@@ -58,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalRippleConfiguration
@@ -69,6 +70,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -77,7 +79,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -189,6 +190,8 @@ private fun NoteBrand(
     compact: Boolean
 ) {
     val isCar = isAutomotive()
+    val noteFontSize = if (isCar) 36.sp else if (compact) 26.sp else 44.sp
+    val subtitleFontSize = (noteFontSize.value / 2f).sp
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(if (isCar) 8.dp else if (compact) 6.dp else 12.dp)
@@ -219,7 +222,7 @@ private fun NoteBrand(
             text = "Note",
             color = AuthDark,
             style = MaterialTheme.typography.headlineMedium.copy(
-                fontSize = if (isCar) 36.sp else if (compact) 26.sp else 44.sp
+                fontSize = noteFontSize
             ),
             fontWeight = FontWeight.Bold
         )
@@ -238,8 +241,9 @@ private fun NoteBrand(
         Text(
             text = subtitle,
             color = FiniGray,
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontSize = if (isCar) 15.sp else if (compact) 13.sp else MaterialTheme.typography.titleLarge.fontSize,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                fontSize = subtitleFontSize,
+                lineHeight = (subtitleFontSize.value * 1.2f).sp,
                 fontWeight = FontWeight.Normal
             ),
             textAlign = TextAlign.Center
@@ -595,26 +599,27 @@ fun AuthSecondaryButton(
 @Composable
 fun AuthInlineButton(
     text: String,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val compact = isWideCompactAuth()
     val isCar = isAutomotive()
     Box(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center
     ) {
         TextButton(
             onClick = onClick,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp),
             colors = ButtonDefaults.textButtonColors(
                 contentColor = AuthDark
             )
         ) {
-            Text(
+            AuthUnderlinedLinkText(
                 text = text,
                 style = MaterialTheme.typography.bodyLarge.copy(
                     fontSize = if (isCar) 15.sp else if (compact) 12.sp else 16.sp
-                ),
-                textDecoration = TextDecoration.Underline
+                )
             )
         }
     }
@@ -645,16 +650,36 @@ fun AuthPromptLink(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
             colors = ButtonDefaults.textButtonColors(contentColor = AuthDark)
         ) {
-            Text(
+            AuthUnderlinedLinkText(
                 text = linkText,
                 style = MaterialTheme.typography.bodyLarge.copy(
                     fontSize = if (isCar) 15.sp else if (compact) 12.sp else 16.sp,
                     fontWeight = FontWeight.Bold
-                ),
-                textDecoration = TextDecoration.Underline
+                )
             )
         }
     }
+}
+
+@Composable
+private fun AuthUnderlinedLinkText(
+    text: String,
+    style: TextStyle
+) {
+    Text(
+        text = text,
+        color = AuthDark,
+        style = style,
+        modifier = Modifier.drawBehind {
+            val y = size.height - 1.dp.toPx()
+            drawLine(
+                color = AuthDark,
+                start = Offset(0f, y),
+                end = Offset(size.width, y),
+                strokeWidth = 1.dp.toPx()
+            )
+        }
+    )
 }
 
 @Composable

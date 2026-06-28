@@ -89,6 +89,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.fini.todoapp.TaskLocationPolicy
 import com.fini.todoapp.data.model.CategoryResponse
 import com.fini.todoapp.data.model.TaskRequest
 import com.fini.todoapp.data.model.TaskResponse
@@ -103,7 +104,8 @@ import java.util.Locale
 
 private enum class SpeechTarget {
     TITLE,
-    NOTE
+    NOTE,
+    LOCATION_NAME
 }
 
 @Composable
@@ -130,6 +132,13 @@ fun CreateTaskScreen(
     var repeatType by remember(taskKey) { mutableStateOf(task?.repeatType ?: "NONE") }
     var weeklyDays by remember(taskKey) { mutableStateOf(repeatDaysFromTask(task)) }
     var savedLocation by remember(taskKey) { mutableStateOf(locationFromTask(task)) }
+    var savedLocationName by remember(taskKey) {
+        mutableStateOf(if (task?.hasLocation == true) TaskLocationPolicy.savedAddressLabel(task.locationName, task.address) else "")
+    }
+    var pendingLocation by remember(taskKey) { mutableStateOf<Location?>(null) }
+    var locationNameDraft by remember(taskKey) { mutableStateOf("") }
+    var showLocationNameDialog by remember(taskKey) { mutableStateOf(false) }
+    var locationChangedThisSession by remember(taskKey) { mutableStateOf(false) }
     var locationError by remember { mutableStateOf<String?>(null) }
     var speechError by remember { mutableStateOf<String?>(null) }
     var formError by remember { mutableStateOf<String?>(null) }
@@ -170,6 +179,7 @@ fun CreateTaskScreen(
                     "$note\n$spokenText"
                 }
             }
+            SpeechTarget.LOCATION_NAME -> locationNameDraft = spokenText
             null -> Unit
         }
         speechError = null
@@ -184,7 +194,14 @@ fun CreateTaskScreen(
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
             )
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "vi-VN")
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Nói nội dung ghi chú")
+            putExtra(
+                RecognizerIntent.EXTRA_PROMPT,
+                when (target) {
+                    SpeechTarget.TITLE -> "Nói tiêu đề ghi chú"
+                    SpeechTarget.NOTE -> "Nói nội dung ghi chú"
+                    SpeechTarget.LOCATION_NAME -> "Nói tên địa chỉ"
+                }
+            )
         }
 
         runCatching {
@@ -194,18 +211,25 @@ fun CreateTaskScreen(
         }
     }
 
+    fun requestLocationName(location: Location?) {
+        if (location == null) {
+            locationError = "Chưa lấy được vị trí. Hãy bật GPS rồi thử lại."
+            return
+        }
+
+        pendingLocation = location
+        locationNameDraft = savedLocationName
+        showLocationNameDialog = true
+        locationError = null
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (granted) {
-            savedLocation = findLastKnownLocation(context)
-            locationError = if (savedLocation == null) {
-                "Chưa lấy được vị trí. Hãy bật GPS rồi thử lại."
-            } else {
-                null
-            }
+            requestLocationName(findLastKnownLocation(context))
         } else {
             locationError = "Bạn cần cấp quyền vị trí để lưu địa điểm."
         }
@@ -248,8 +272,8 @@ fun CreateTaskScreen(
             hasLocation = savedLocation != null,
             latitude = savedLocation?.latitude,
             longitude = savedLocation?.longitude,
-            locationName = if (savedLocation != null) "Vị trí đã lưu" else null,
-            address = task?.address
+            locationName = if (savedLocation != null) savedLocationName.trim().ifBlank { null } else null,
+            address = if (savedLocation != null) savedLocationName.trim().ifBlank { null } else null
         )
 
         if (task == null) {
@@ -258,6 +282,30 @@ fun CreateTaskScreen(
             onUpdate(task.id, request)
         }
         onBack()
+    }
+
+    if (showLocationNameDialog) {
+        LocationNameDialog(
+            value = locationNameDraft,
+            onValueChange = { locationNameDraft = it },
+            onVoiceInput = { launchVietnameseSpeech(SpeechTarget.LOCATION_NAME) },
+            onDismiss = {
+                showLocationNameDialog = false
+                pendingLocation = null
+            },
+            onConfirm = {
+                val cleanName = locationNameDraft.trim()
+                val location = pendingLocation
+                if (location != null && cleanName.isNotBlank()) {
+                    savedLocation = location
+                    savedLocationName = cleanName
+                    locationChangedThisSession = true
+                    showLocationNameDialog = false
+                    pendingLocation = null
+                    locationError = null
+                }
+            }
+        )
     }
 
     Surface(
@@ -381,17 +429,17 @@ fun CreateTaskScreen(
 
                         LocationSection(
                             location = savedLocation,
+                            locationName = savedLocationName,
                             error = locationError,
                             compact = compact,
-                            showDirections = task != null,
+                            showDirections = TaskLocationPolicy.shouldShowDirections(
+                                isExistingTask = task != null,
+                                hasStoredLocation = savedLocation != null,
+                                locationChangedThisSession = locationChangedThisSession
+                            ),
                             onSaveLocation = {
                                 if (hasLocationPermission(context)) {
-                                    savedLocation = findLastKnownLocation(context)
-                                    locationError = if (savedLocation == null) {
-                                        "Chưa lấy được vị trí. Hãy bật GPS rồi thử lại."
-                                    } else {
-                                        null
-                                    }
+                                    requestLocationName(findLastKnownLocation(context))
                                 } else {
                                     permissionLauncher.launch(
                                         arrayOf(
@@ -935,8 +983,80 @@ private fun DayCircle(
 }
 
 @Composable
+private fun LocationNameDialog(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onVoiceInput: () -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Đặt tên địa chỉ") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    color = Color.White,
+                    border = BorderStroke(1.dp, FiniBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(start = 14.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (value.isBlank()) {
+                                Text(
+                                    text = "Tên địa chỉ",
+                                    color = FiniGray,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            BasicTextField(
+                                value = value,
+                                onValueChange = onValueChange,
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(color = FiniBlack),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        IconButton(onClick = onVoiceInput) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Nhập tên địa chỉ bằng giọng nói",
+                                tint = FiniGray
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = value.trim().isNotEmpty()
+            ) {
+                Text("Lưu")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Hủy")
+            }
+        }
+    )
+}
+
+@Composable
 private fun LocationSection(
     location: Location?,
+    locationName: String,
     error: String?,
     compact: Boolean,
     showDirections: Boolean,
@@ -945,7 +1065,7 @@ private fun LocationSection(
     val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         MonoActionButton(
-            text = "Lưu vị trí hiện tại",
+            text = "Lưu địa chỉ",
             onClick = onSaveLocation,
             height = if (compact) 42.dp else 52.dp,
             icon = Icons.Default.LocationOn
@@ -962,12 +1082,12 @@ private fun LocationSection(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Vị trí đã lưu",
+                        text = "Đã lưu địa chỉ",
                         color = FiniBlack,
                         style = MaterialTheme.typography.titleMedium
                     )
                     Text(
-                        text = "%.5f, %.5f".format(location.latitude, location.longitude),
+                        text = TaskLocationPolicy.savedAddressLabel(locationName, null),
                         color = FiniGray,
                         style = MaterialTheme.typography.bodyMedium
                     )

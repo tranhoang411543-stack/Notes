@@ -38,10 +38,6 @@ public class CategoryService {
     public CategoryResponse createCategory(UUID userId, CategoryRequest request) {
         String name = TaskRules.trimRequired(request.getName(), "Category name is required");
 
-        if (categoryRepository.existsByUserIdAndNameIgnoreCaseAndDeletedAtIsNull(userId, name)) {
-            throw new RuntimeException("Category name already exists");
-        }
-
         Category category = new Category();
         category.setUserId(userId);
         category.setName(name);
@@ -58,13 +54,6 @@ public class CategoryService {
                 .orElseThrow(() -> new RuntimeException("Category not found"));
 
         String name = TaskRules.trimRequired(request.getName(), "Category name is required");
-
-        categoryRepository
-                .findByUserIdAndNameIgnoreCaseAndDeletedAtIsNull(userId, name)
-                .filter(existing -> !existing.getId().equals(categoryId))
-                .ifPresent(existing -> {
-                    throw new RuntimeException("Category name already exists");
-                });
 
         category.setName(name);
         category.setColor(TaskRules.trimToNull(request.getColor()));

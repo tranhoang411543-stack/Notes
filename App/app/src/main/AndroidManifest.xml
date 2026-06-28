@@ -32,4 +32,14 @@
             android:exported="false" />
 
     </application>
+
+    <!-- Cần thiết trên Android 11+ để app có thể nhìn thấy TTS engine
+         (Package Visibility policy). Không có block này, TextToSpeech
+         khởi tạo thành công nhưng không có voice nào → không phát âm. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
 </manifest>

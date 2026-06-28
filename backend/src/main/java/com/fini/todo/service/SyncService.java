@@ -149,7 +149,6 @@ public class SyncService {
                 category.setDeletedAt(LocalDateTime.now());
             } else {
                 String name = TaskRules.trimRequired(item.getName(), "Category name is required");
-                validateCategoryNameAvailable(userId, item.getId(), name);
 
                 category.setName(name);
                 category.setColor(TaskRules.trimToNull(item.getColor()));
@@ -186,7 +185,7 @@ public class SyncService {
             if (deleted) {
                 task.setDeletedAt(LocalDateTime.now());
             } else {
-                validateTaskSyncItem(userId, item, existingTask.map(Task::getNotifyAt).orElse(null));
+                validateTaskSyncItem(userId, item);
 
                 task.setCategoryId(item.getCategoryId());
                 task.setTitle(TaskRules.trimRequired(item.getTitle(), "Task title is required"));
@@ -235,7 +234,7 @@ public class SyncService {
         }
     }
 
-    private void validateTaskSyncItem(UUID userId, SyncTaskItem item, LocalDateTime existingNotifyAt) {
+    private void validateTaskSyncItem(UUID userId, SyncTaskItem item) {
         if (item.getTitle() == null || item.getTitle().isBlank()) {
             throw new RuntimeException("Task title is required");
         }
@@ -254,18 +253,15 @@ public class SyncService {
         LocalDateTime notifyAt = effectiveNotifyAt(repeatType, item.getNotifyAt(), item.getDueAt());
         java.time.LocalTime notifyTime = effectiveNotifyTime(repeatType, item.getNotifyTime(), item.getDueAt());
 
-        TaskRules.validateNotification(repeatType, notifyAt, notifyTime, existingNotifyAt);
+        validateSyncNotification(repeatType, notifyTime);
         TaskRules.normalizeRepeatDays(repeatType, item.getRepeatDays());
         TaskRules.validateLocation(item.getHasLocation(), item.getLatitude(), item.getLongitude());
     }
 
-    private void validateCategoryNameAvailable(UUID userId, UUID categoryId, String name) {
-        categoryRepository
-                .findByUserIdAndNameIgnoreCaseAndDeletedAtIsNull(userId, name)
-                .filter(existing -> !existing.getId().equals(categoryId))
-                .ifPresent(existing -> {
-                    throw new RuntimeException("Category name already exists");
-                });
+    private void validateSyncNotification(String repeatType, java.time.LocalTime notifyTime) {
+        if (!"NONE".equals(repeatType) && notifyTime == null) {
+            throw new RuntimeException("notifyTime is required when repeatType is DAILY or WEEKLY");
+        }
     }
 
     private void incrementCategoryVersion(Category category) {

@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -114,7 +115,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.fini.todoapp.data.AuthTokenStore
 import com.fini.todoapp.data.model.CategoryResponse
 import com.fini.todoapp.data.model.TaskResponse
 import com.fini.todoapp.notification.TaskNotificationScheduler
@@ -140,6 +140,7 @@ fun HomeScreen(
     viewModel: HomeViewModel,
     onCreateTask: () -> Unit,
     onOpenTask: (String) -> Unit,
+    onRefresh: () -> Unit,
     onLogout: () -> Unit
 ) {
     val state = viewModel.state
@@ -270,12 +271,9 @@ fun HomeScreen(
                 state = state,
                 onFilterSelected = viewModel::setDateFilter,
                 onOpenTrash = viewModel::openTrash,
-                onRefresh = viewModel::loadAll,
+                onRefresh = onRefresh,
                 onClearTrash = { showConfirmClearTrashDialog = true },
-                onLogout = {
-                    AuthTokenStore.clear()
-                    onLogout()
-                }
+                onLogout = onLogout
             )
 
             val baseSpacing = if (compact) 16.dp else 24.dp
@@ -608,6 +606,7 @@ private fun HomeHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .statusBarsPadding()
             .padding(top = if (isAutomotive) 36.dp else if (compact) 12.dp else 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

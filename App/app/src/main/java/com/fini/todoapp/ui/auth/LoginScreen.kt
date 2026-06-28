@@ -2,6 +2,7 @@ package com.fini.todoapp.ui.auth
 
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
@@ -21,6 +22,7 @@ import kotlinx.coroutines.delay
 fun LoginScreen(
     viewModel: AuthViewModel,
     onLoginSuccess: () -> Unit,
+    onContinueOffline: () -> Unit,
     onGoToRegister: () -> Unit,
     onGoToForgotPassword: () -> Unit
 ) {
@@ -30,6 +32,7 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     val canLogin = emailOrUsername.isNotBlank() && password.isNotBlank() && !state.loading
     val feedbackMessage = state.error ?: state.message
+    val isCar = isAutomotive()
     val submitLogin = {
         if (canLogin) {
             viewModel.login(
@@ -48,7 +51,7 @@ fun LoginScreen(
     }
 
     AuthScaffold(
-        subtitle = "Đăng nhập để tiếp tục",
+        subtitle = AuthCopy.LOGIN_SUBTITLE,
         toastMessage = feedbackMessage
     ) {
         AuthTextField(
@@ -71,7 +74,7 @@ fun LoginScreen(
             password = true
         )
 
-        Spacer(modifier = Modifier.height(if (isAutomotive()) 0.dp else 4.dp))
+        Spacer(modifier = Modifier.height(if (isCar) 0.dp else 4.dp))
 
         AuthPrimaryButton(
             text = "Đăng nhập",
@@ -82,7 +85,17 @@ fun LoginScreen(
         )
 
         AuthInlineButton(
+            text = AuthCopy.CONTINUE_WITHOUT_LOGIN,
+            modifier = Modifier.heightIn(min = if (isCar) 30.dp else 0.dp),
+            onClick = {
+                viewModel.clearFeedback()
+                onContinueOffline()
+            }
+        )
+
+        AuthInlineButton(
             text = "Quên mật khẩu?",
+            modifier = Modifier.heightIn(min = if (isCar) 30.dp else 0.dp),
             onClick = {
                 viewModel.clearFeedback()
                 onGoToForgotPassword()
