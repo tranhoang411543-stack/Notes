@@ -83,6 +83,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fini.todoapp.ui.ClearFocusLayer
+import com.fini.todoapp.ui.clearFocusOnTap
 import com.fini.todoapp.ui.theme.FiniBackground
 import com.fini.todoapp.ui.theme.FiniBlack
 import com.fini.todoapp.ui.theme.FiniBorder
@@ -139,6 +140,7 @@ fun AuthScaffold(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .clearFocusOnTap()
                         .verticalScroll(rememberScrollState()),
                     contentAlignment = Alignment.TopCenter
                 ) {
